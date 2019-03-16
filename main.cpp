@@ -16,21 +16,25 @@ int main()
     std::vector<RadarObject> radarobjs;
     std::vector<LidarPoint> lidarpts;
     std::vector<BoxObject> filtered_radarobjs;
+    std::vector<BoxObject> lidarobjs;
     while (frame_cnt++ < 60 / update_period)
     {
         sim.GenerateGT(gt);
         sim.GenerateRadarObsv(gt, radarobjs);
         sim.GenerateLidarPts(gt, lidarpts);
-        pointcloud_labelling(lidarpts);
 
         radar_tracker.EKF(radarobjs, filtered_radarobjs);
         anchor2center(filtered_radarobjs);
 
+        // pointcloud_labelling(lidarpts);
+        lidar_object_detection(lidarpts, filtered_radarobjs, lidarobjs);
+
         viser.Init();
         viser.DrawGT(gt, cv::Scalar(0,255,0));
-        viser.DrawRadarObjs(radarobjs, cv::Scalar(0,0,255));
-        // viser.DrawLidarPts(lidarpts, cv::Scalar(0,255,255));
-        viser.DrawFT(filtered_radarobjs, cv::Scalar(255,255,0));
+        // viser.DrawRadarObjs(radarobjs, cv::Scalar(0,0,255));
+        viser.DrawLidarPts(lidarpts, cv::Scalar(0,255,255));
+        // viser.DrawFT(filtered_radarobjs, cv::Scalar(255,255,0));
+        viser.DrawLidarObjs(lidarobjs, cv::Scalar(255,255,0));
 
         viser.ShowMap();
 

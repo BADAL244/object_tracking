@@ -85,14 +85,13 @@ static void ccl_dfs(int row, int col, cv::Mat &m,
     }
 }
 
-static void ccl(cv::Mat &map)
+static void ccl(cv::Mat &map, std::vector<int> &label)
 {
     cv::Mat m;
     cv::cvtColor(map, m, CV_BGR2GRAY);
 	// printf("[pointcloud_labelling] map cols %d, rows %d\n", m.cols, m.cols);
 
     std::vector<bool> visited(m.rows * m.cols, 0);
-    std::vector<int> label(m.rows * m.cols, 0);
     std::vector<int> area(m.rows * m.cols, 0);
 
 	int label_cnt = 0;
@@ -145,7 +144,10 @@ void pointcloud_labelling(std::vector<LidarPoint> &lidarpts)
 
 	printf("[pointcloud_labelling] %zu pointclouds received\n", lidarpts.size());
 	if (lidarpts.size())
-		ccl(lidarmap);
+	{
+		std::vector<int> label(lidarmap.rows * lidarmap.cols, 0);
+		ccl(lidarmap, label);
+	}
 	
 	// // test ccl
 	// cv::Mat lidarmap(500, 500, CV_8UC3, cv::Scalar(0,0,0));
@@ -156,6 +158,142 @@ void pointcloud_labelling(std::vector<LidarPoint> &lidarpts)
     cv::namedWindow("pointcloud_label");
 	cv::imshow("pointcloud_label", lidarmap);
     cv::waitKey(5);
+}
+
+static void detection_core(std::vector<cv::Point> &roi, 
+						   std::vector<int> &label, 
+						   std::vector<BoxObject> &lidarobjs,
+						   int step)
+{
+	// analyse which label does roi contain mostly
+	std::map<int, int> label_cnt;
+	for (auto pt : roi)
+	{
+		int u = pt.x;
+		int v = pt.y;
+		int label_tmp = label[v*step + u];
+
+		if (label_cnt.find(label_tmp) == label_cnt.end())
+			label_cnt[label_tmp] = 1;
+		else
+			label_cnt[label_tmp]++;
+	}
+	int max_cnt = 0;
+	int max_cnt_label = 0;
+	for (auto each_label_cnt : label_cnt)
+	{
+		if (each_label_cnt.second > max_cnt)
+		{
+			max_cnt = each_label_cnt.second;
+			max_cnt_label = each_label_cnt.first;
+		}
+	}
+
+	// rearrange roi pointclouds with one main label
+	std::vector<cv::Point> roi_old;
+	roi_old.swap(roi);
+	for (auto pt : roi_old)
+	{
+		int u = pt.x;
+		int v = pt.y;
+		int label_tmp = label[v*step + u];
+
+		if (label_tmp == max_cnt_label)
+			roi.push_back(pt);
+	}
+
+	// draw box
+	// naive box to include roi pointcloud, not in minimun size
+	// TODO minimum size box
+	float min_x = FLT_MAX, min_y = FLT_MAX;
+	float max_x = -FLT_MAX, max_y = -FLT_MAX;
+
+	for (auto pt : roi)
+	{
+		int u = pt.x;
+		int v = pt.y;
+
+		float rx = map_range_length - v * map_scale;
+		float ry = u * map_scale - map_range_width;
+
+		// printf("[detection_core] one point rx %f, ry %f, u %d, v %d\n",
+		// 	   rx, ry, u, v);
+
+		if (rx > max_x)
+			max_x = rx;
+		if (rx < min_x)
+			min_x = rx;
+		if (ry > max_y)
+			max_y = ry;
+		if (ry < min_y)
+			min_y = ry;
+	}
+
+	// printf("[detection_core] min_x %f, max_x %f, min_y %f, max_y %f\n",
+	// 	   min_x, max_x, min_y, max_y);
+
+	// summary
+	BoxObject lidarobj;
+	lidarobj.rx = (min_x + max_x) / 2;
+	lidarobj.ry = (min_y + max_y) / 2;
+	lidarobj.vx = lidarobj.vy = 0;
+
+	float size_l = max_x - min_x;
+	size_l = std::max(box_object_len, size_l);
+	float size_w = max_y - min_y;
+	size_w = std::max(box_object_wid, size_w);
+	lidarobj.corner[0] = cv::Point2f(size_l/2, -size_w/2);
+    lidarobj.corner[1] = cv::Point2f(-size_l/2, -size_w/2);
+    lidarobj.corner[2] = cv::Point2f(-size_l/2, size_w/2);
+    lidarobj.corner[3] = cv::Point2f(size_l/2, size_w/2);
+	
+	lidarobj.yaw = Eigen::Quaternionf(1, 0, 0, 0);
+	lidarobjs.push_back(lidarobj);
+}
+
+void lidar_object_detection(std::vector<LidarPoint> &lidarpts, 
+							std::vector<BoxObject> &filtered_radarobjs,
+							std::vector<BoxObject> &lidarobjs)
+{
+	lidarobjs.clear();
+	printf("[pointcloud_labelling] %zu pointclouds received\n", lidarpts.size());
+	if (lidarpts.size())
+	{
+		Visualizer pcviser;
+    	pcviser.Init();
+    	pcviser.DrawLidarPts(lidarpts, cv::Scalar(0,255,255));
+		
+    	cv::Mat lidarmap = pcviser.GetMap();
+		std::vector<int> label(lidarmap.rows * lidarmap.cols, 0);
+		ccl(lidarmap, label);
+
+		for (auto radarobj : filtered_radarobjs)
+		{
+			float rx = radarobj.rx;
+			float ry = radarobj.ry;
+			
+			// find 20*20 roi
+			std::vector<cv::Point> roi;
+			for (float i=-20/2; i<=20/2; ++i)
+			{
+				for (float j=-20/2; j<=20/2; ++j)
+				{
+					float rx_ = rx + i;
+					float ry_ = ry + j;
+
+					cv::Point pt(ry_ / map_scale + map_range_width / map_scale,
+						map_range_length / map_scale - rx_ / map_scale);
+
+					if (label[pt.y*lidarmap.cols + pt.x])
+						roi.push_back(pt);
+				}
+			}
+
+			// generate lidar box from roi pointclouds
+			if (roi.size())
+				detection_core(roi, label, lidarobjs, lidarmap.cols);
+		}
+	}
 }
 
 #endif // POINTCLOUDHELPER_H

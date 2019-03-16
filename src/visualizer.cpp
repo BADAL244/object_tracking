@@ -80,6 +80,15 @@ void Visualizer::DrawLidarPts(const std::vector<LidarPoint> &v, cv::Scalar color
     }
 }
 
+void Visualizer::DrawLidarObjs(const std::vector<BoxObject> &v, cv::Scalar color)
+{
+    for (auto obj : v)
+    {
+        draw_obj(local_map, obj, color);
+        // ShowId(obj);
+    }
+}
+
 void Visualizer::DrawFT(const std::vector<BoxObject> &v, cv::Scalar color)
 {
     for (auto obj : v)

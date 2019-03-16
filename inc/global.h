@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <climits>
 #include <vector>
+#include <map>
 #include <random>
 #include <cmath>
 
