@@ -165,6 +165,7 @@ static void detection_core(std::vector<cv::Point> &roi,
 						   std::vector<BoxObject> &lidarobjs,
 						   int step)
 {
+/*
 	// analyse which label does roi contain mostly
 	std::map<int, int> label_cnt;
 	for (auto pt : roi)
@@ -201,10 +202,25 @@ static void detection_core(std::vector<cv::Point> &roi,
 		if (label_tmp == max_cnt_label)
 			roi.push_back(pt);
 	}
+*/
+
+	// if roi contains one kind of label
+	std::map<int, int> label_cnt;
+	for (auto pt : roi)
+	{
+		int u = pt.x;
+		int v = pt.y;
+		int label_tmp = label[v*step + u];
+
+		if (label_cnt.find(label_tmp) == label_cnt.end())
+			label_cnt[label_tmp] = 1;
+		else
+			label_cnt[label_tmp]++;
+	}
+	if (label_cnt.size() != 1)  return;
 
 	// draw box
-	// naive box to include roi pointcloud, not in minimun size
-	// TODO minimum size box
+	// naive box to include roi pointclouds as a reference, not in minimum size
 	float min_x = FLT_MAX, min_y = FLT_MAX;
 	float max_x = -FLT_MAX, max_y = -FLT_MAX;
 
@@ -232,22 +248,94 @@ static void detection_core(std::vector<cv::Point> &roi,
 	// printf("[detection_core] min_x %f, max_x %f, min_y %f, max_y %f\n",
 	// 	   min_x, max_x, min_y, max_y);
 
+	float ctr_rx = (min_x + max_x) / 2;
+	float ctr_ry = (min_y + max_y) / 2;
+	float min_area = fabs((max_x - min_x) * (max_y - min_y));
+	float size_l = fabs(max_x - min_x);
+	size_l = std::max(box_object_len, size_l);
+	float size_w = fabs(max_y - min_y);
+	size_w = std::max(box_object_wid, size_w);
+
+	float final_yaw = 0;
+	float final_size_l = size_l;
+	float final_size_w = size_w;
+
+	// find box with minimum size
+	Eigen::MatrixXd point_matrix = Eigen::MatrixXd::Zero(2, roi.size());
+	for (int i=0; i<roi.size(); ++i)
+	{
+		cv::Point pt = roi[i];
+		int u = pt.x;
+		int v = pt.y;
+
+		float rx = map_range_length - v * map_scale;
+		float ry = u * map_scale - map_range_width;
+
+		point_matrix(0, i) = rx - ctr_rx;
+		point_matrix(1, i) = ry - ctr_ry;
+	}
+
+	for (float yaw = 0; yaw < 180; yaw += 10)
+	{
+		// avoid ambiguous and repeatness
+		if ((180 - yaw > 45) && (180 - yaw < 135))  continue;
+
+		float yaw_rad = deg2rad(yaw);
+		Eigen::Matrix2d R;
+		R << cos(yaw_rad), -sin(yaw_rad),
+		     sin(yaw_rad), cos(yaw_rad);
+		
+		Eigen::MatrixXd rotated_point_matrix = R * point_matrix;
+
+		min_x = FLT_MAX, min_y = FLT_MAX;
+		max_x = -FLT_MAX, max_y = -FLT_MAX;
+		for (int i=0; i<roi.size(); ++i)
+		{
+			float rx = rotated_point_matrix(0, i) + ctr_rx;
+			float ry = rotated_point_matrix(1, i) + ctr_ry;
+
+			if (rx > max_x)
+				max_x = rx;
+			if (rx < min_x)
+				min_x = rx;
+			if (ry > max_y)
+				max_y = ry;
+			if (ry < min_y)
+				min_y = ry;
+		}
+		float area = fabs((max_x - min_x) * (max_y - min_y));
+
+		if (false)
+		{
+			// TODO: maybe compute fitted scores using size and pointclouds in roi can get better yaw
+		}
+		else
+		{
+			if (area < min_area)
+			{
+				min_area = area;
+
+				final_yaw = 180 - yaw;
+				final_size_l = fabs(max_x - min_x);
+				final_size_l = std::max(box_object_len, final_size_l);
+				final_size_w = fabs(max_y - min_y);
+				final_size_w = std::max(box_object_wid, final_size_w);
+			}
+		}
+	}
+
+	final_yaw = deg2rad(final_yaw);
+
 	// summary
 	BoxObject lidarobj;
-	lidarobj.rx = (min_x + max_x) / 2;
-	lidarobj.ry = (min_y + max_y) / 2;
+	lidarobj.rx = ctr_rx;
+	lidarobj.ry = ctr_ry;
 	lidarobj.vx = lidarobj.vy = 0;
-
-	float size_l = max_x - min_x;
-	size_l = std::max(box_object_len, size_l);
-	float size_w = max_y - min_y;
-	size_w = std::max(box_object_wid, size_w);
-	lidarobj.corner[0] = cv::Point2f(size_l/2, -size_w/2);
-    lidarobj.corner[1] = cv::Point2f(-size_l/2, -size_w/2);
-    lidarobj.corner[2] = cv::Point2f(-size_l/2, size_w/2);
-    lidarobj.corner[3] = cv::Point2f(size_l/2, size_w/2);
-	
-	lidarobj.yaw = Eigen::Quaternionf(1, 0, 0, 0);
+	lidarobj.corner[0] = cv::Point2f(final_size_l/2, -final_size_w/2);
+    lidarobj.corner[1] = cv::Point2f(-final_size_l/2, -final_size_w/2);
+    lidarobj.corner[2] = cv::Point2f(-final_size_l/2, final_size_w/2);
+    lidarobj.corner[3] = cv::Point2f(final_size_l/2, final_size_w/2);
+	lidarobj.yaw = Eigen::Quaternionf(cos(final_yaw/2), 0, 0, sin(final_yaw/2));
 	lidarobjs.push_back(lidarobj);
 }
 
@@ -272,11 +360,11 @@ void lidar_object_detection(std::vector<LidarPoint> &lidarpts,
 			float rx = radarobj.rx;
 			float ry = radarobj.ry;
 			
-			// find 20*20 roi
+			// find 15m*15m roi
 			std::vector<cv::Point> roi;
-			for (float i=-20/2; i<=20/2; ++i)
+			for (float i=-15/2; i<=15/2; i+=0.1)
 			{
-				for (float j=-20/2; j<=20/2; ++j)
+				for (float j=-15/2; j<=15/2; j+=0.1)
 				{
 					float rx_ = rx + i;
 					float ry_ = ry + j;
