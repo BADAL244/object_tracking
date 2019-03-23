@@ -256,6 +256,8 @@ static void detection_core(std::vector<cv::Point> &roi,
 	float size_w = fabs(max_y - min_y);
 	size_w = std::max(box_object_wid, size_w);
 
+	bool is_large = std::max(size_l, size_w) > (box_object_len+1);
+
 	float final_yaw = 0;
 	float final_size_l = size_l;
 	float final_size_w = size_w;
@@ -275,6 +277,7 @@ static void detection_core(std::vector<cv::Point> &roi,
 		point_matrix(1, i) = ry - ctr_ry;
 	}
 
+	float min_score = FLT_MAX;
 	for (float yaw = 0; yaw < 180; yaw += 10)
 	{
 		// avoid ambiguous and repeatness
@@ -305,9 +308,32 @@ static void detection_core(std::vector<cv::Point> &roi,
 		}
 		float area = fabs((max_x - min_x) * (max_y - min_y));
 
-		if (false)
+		if (is_large)
 		{
-			// TODO: maybe compute fitted scores using size and pointclouds in roi can get better yaw
+			// large car maybe compute fitted scores using size and pointclouds in roi can get better yaw
+			float score = 0;
+			for (auto pt : roi)
+			{
+				int u = pt.x;
+				int v = pt.y;
+
+				float rx = map_range_length - v * map_scale;
+				float ry = u * map_scale - map_range_width;
+
+				float score_rx = std::min(fabs(rx - max_x), fabs(rx - min_x));
+				float score_ry = std::min(fabs(ry - max_y), fabs(ry - min_y));
+				score += std::min(score_rx, score_ry);
+			}
+			if (score < min_score)
+			{
+				min_score = score;
+
+				final_yaw = 180 - yaw;
+				final_size_l = fabs(max_x - min_x);
+				final_size_l = std::max(box_object_len, final_size_l);
+				final_size_w = fabs(max_y - min_y);
+				final_size_w = std::max(box_object_wid, final_size_w);
+			}
 		}
 		else
 		{
