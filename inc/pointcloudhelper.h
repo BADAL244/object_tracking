@@ -160,56 +160,17 @@ void pointcloud_labelling(std::vector<LidarPoint> &lidarpts)
     cv::waitKey(5);
 }
 
-static void detection_core(std::vector<cv::Point> &roi, 
+static void detection_core(std::vector<LidarPoint> &roi,
 						   std::vector<int> &label, 
 						   std::vector<BoxObject> &lidarobjs,
 						   int step)
 {
-/*
-	// analyse which label does roi contain mostly
-	std::map<int, int> label_cnt;
-	for (auto pt : roi)
-	{
-		int u = pt.x;
-		int v = pt.y;
-		int label_tmp = label[v*step + u];
-
-		if (label_cnt.find(label_tmp) == label_cnt.end())
-			label_cnt[label_tmp] = 1;
-		else
-			label_cnt[label_tmp]++;
-	}
-	int max_cnt = 0;
-	int max_cnt_label = 0;
-	for (auto each_label_cnt : label_cnt)
-	{
-		if (each_label_cnt.second > max_cnt)
-		{
-			max_cnt = each_label_cnt.second;
-			max_cnt_label = each_label_cnt.first;
-		}
-	}
-
-	// rearrange roi pointclouds with one main label
-	std::vector<cv::Point> roi_old;
-	roi_old.swap(roi);
-	for (auto pt : roi_old)
-	{
-		int u = pt.x;
-		int v = pt.y;
-		int label_tmp = label[v*step + u];
-
-		if (label_tmp == max_cnt_label)
-			roi.push_back(pt);
-	}
-*/
-
 	// if roi contains one kind of label
 	std::map<int, int> label_cnt;
-	for (auto pt : roi)
+	for (auto lpt : roi)
 	{
-		int u = pt.x;
-		int v = pt.y;
+		int u = lpt.ry / map_scale + map_range_width / map_scale;
+		int v = map_range_length / map_scale - lpt.rx / map_scale;
 		int label_tmp = label[v*step + u];
 
 		if (label_cnt.find(label_tmp) == label_cnt.end())
@@ -224,16 +185,10 @@ static void detection_core(std::vector<cv::Point> &roi,
 	float min_x = FLT_MAX, min_y = FLT_MAX;
 	float max_x = -FLT_MAX, max_y = -FLT_MAX;
 
-	for (auto pt : roi)
+	for (auto lpt : roi)
 	{
-		int u = pt.x;
-		int v = pt.y;
-
-		float rx = map_range_length - v * map_scale;
-		float ry = u * map_scale - map_range_width;
-
-		// printf("[detection_core] one point rx %f, ry %f, u %d, v %d\n",
-		// 	   rx, ry, u, v);
+		float rx = lpt.rx;
+		float ry = lpt.ry;
 
 		if (rx > max_x)
 			max_x = rx;
@@ -256,8 +211,6 @@ static void detection_core(std::vector<cv::Point> &roi,
 	float size_w = fabs(max_y - min_y);
 	size_w = std::max(box_object_wid, size_w);
 
-	bool is_large = std::max(size_l, size_w) > (box_object_len+1);
-
 	float final_yaw = 0;
 	float final_size_l = size_l;
 	float final_size_w = size_w;
@@ -266,19 +219,16 @@ static void detection_core(std::vector<cv::Point> &roi,
 	Eigen::MatrixXd point_matrix = Eigen::MatrixXd::Zero(2, roi.size());
 	for (int i=0; i<roi.size(); ++i)
 	{
-		cv::Point pt = roi[i];
-		int u = pt.x;
-		int v = pt.y;
-
-		float rx = map_range_length - v * map_scale;
-		float ry = u * map_scale - map_range_width;
+		LidarPoint lpt = roi[i];
+		float rx = lpt.rx;
+		float ry = lpt.ry;
 
 		point_matrix(0, i) = rx - ctr_rx;
 		point_matrix(1, i) = ry - ctr_ry;
 	}
 
 	float min_score = FLT_MAX;
-	for (float yaw = 0; yaw < 180; yaw += 10)
+	for (float yaw = 0; yaw < 180; yaw += 5)
 	{
 		// avoid ambiguous and repeatness
 		if ((180 - yaw > 45) && (180 - yaw < 135))  continue;
@@ -308,21 +258,18 @@ static void detection_core(std::vector<cv::Point> &roi,
 		}
 		float area = fabs((max_x - min_x) * (max_y - min_y));
 
-		if (is_large)
+		if (true)
 		{
-			// large car maybe compute fitted scores using size and pointclouds in roi can get better yaw
+			// compute fitted scores using size and pointclouds in roi can get better yaw
 			float score = 0;
-			for (auto pt : roi)
+			for (int i=0; i<roi.size(); ++i)
 			{
-				int u = pt.x;
-				int v = pt.y;
-
-				float rx = map_range_length - v * map_scale;
-				float ry = u * map_scale - map_range_width;
+				float rx = rotated_point_matrix(0, i) + ctr_rx;
+				float ry = rotated_point_matrix(1, i) + ctr_ry;
 
 				float score_rx = std::min(fabs(rx - max_x), fabs(rx - min_x));
 				float score_ry = std::min(fabs(ry - max_y), fabs(ry - min_y));
-				score += std::min(score_rx, score_ry);
+				score += pow(std::min(score_rx, score_ry), 2);
 			}
 			if (score < min_score)
 			{
@@ -343,9 +290,15 @@ static void detection_core(std::vector<cv::Point> &roi,
 
 				final_yaw = 180 - yaw;
 				final_size_l = fabs(max_x - min_x);
-				final_size_l = std::max(box_object_len, final_size_l);
+				// final_size_l = std::max(box_object_len, final_size_l);
 				final_size_w = fabs(max_y - min_y);
-				final_size_w = std::max(box_object_wid, final_size_w);
+				// final_size_w = std::max(box_object_wid, final_size_w);
+
+				if (final_size_l < box_object_len
+				    && final_size_l < box_object_wid
+					&& final_size_w < box_object_len
+					&& final_size_w < box_object_wid)
+					return;
 			}
 		}
 	}
@@ -387,10 +340,10 @@ void lidar_object_detection(std::vector<LidarPoint> &lidarpts,
 			float ry = radarobj.ry;
 			
 			// find 15m*15m roi
-			std::vector<cv::Point> roi;
-			for (float i=-15/2; i<=15/2; i+=0.1)
+			std::vector<LidarPoint> roi;
+			for (float i=-15.0/2; i<=15.0/2; i+=0.1)
 			{
-				for (float j=-15/2; j<=15/2; j+=0.1)
+				for (float j=-15.0/2; j<=15.0/2; j+=0.1)
 				{
 					float rx_ = rx + i;
 					float ry_ = ry + j;
@@ -399,7 +352,10 @@ void lidar_object_detection(std::vector<LidarPoint> &lidarpts,
 						map_range_length / map_scale - rx_ / map_scale);
 
 					if (label[pt.y*lidarmap.cols + pt.x])
-						roi.push_back(pt);
+					{
+						LidarPoint lpt{rx_, ry_};
+						roi.push_back(lpt);
+					}
 				}
 			}
 
