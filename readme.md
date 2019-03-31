@@ -1,6 +1,6 @@
 Kalman Tracking
 ==================
-The repository is a tracking simulation system using kalman filter, including a groundtruth simulator and a radar measurements simulator. Lidar measurements simulator and sensor fusion will be supported soon.
+The repository is a tracking simulation system using kalman filter, including a groundtruth simulator and a radar/lidar measurements simulator.
 
 Pre-requisites
 --------------
@@ -10,6 +10,7 @@ Eigen
 
 Demo
 -----
-Below shows one frame of tracking results. Green box objects are groundtruths. Red Points are radar reflectors, and blue box objects are filtering results.
+Below shows examples of tracking results drawn in blue boxes. Green box objects are groundtruths. Red points are radar reflectors, and yellow points are lidar pointclouds.
 
-![example.png](https://github.com/hunterlew/kalman_tracking/blob/master/example.png)
+![example_radar.png](https://github.com/hunterlew/kalman_tracking/blob/master/example_radar.png)
+![example_lidar.png](https://github.com/hunterlew/kalman_tracking/blob/master/example_lidar.png)

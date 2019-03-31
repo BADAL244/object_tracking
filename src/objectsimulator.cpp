@@ -238,6 +238,32 @@ static cv::Point lidarmap2pixel(cv::Point2f pt)
                      lidar_max_range / lidar_range_acc - x / lidar_range_acc);
 }
 
+static bool is_inside_box(cv::Point2f pt, std::vector<cv::Point2f> corner)
+{
+    assert(corner.size() == 4);
+
+    Eigen::Vector3d vec_pt(pt.x, pt.y, 0);
+    Eigen::Vector3d vec_cor0(corner[0].x, corner[0].y, 0);
+    Eigen::Vector3d vec_cor1(corner[1].x, corner[1].y, 0);
+    Eigen::Vector3d vec_cor2(corner[2].x, corner[2].y, 0);
+    Eigen::Vector3d vec_cor3(corner[3].x, corner[3].y, 0);
+    Eigen::Vector3d vec_positive_z(0,0,1);
+
+    if ((vec_cor1-vec_cor0).cross(vec_pt-vec_cor0).dot(vec_positive_z)>=0
+        && (vec_cor2-vec_cor1).cross(vec_pt-vec_cor1).dot(vec_positive_z)>=0
+        && (vec_cor3-vec_cor2).cross(vec_pt-vec_cor2).dot(vec_positive_z)>=0
+        && (vec_cor0-vec_cor3).cross(vec_pt-vec_cor3).dot(vec_positive_z)>=0)
+        return true;
+
+    if ((vec_cor1-vec_cor0).cross(vec_pt-vec_cor0).dot(vec_positive_z)<0
+        && (vec_cor2-vec_cor1).cross(vec_pt-vec_cor1).dot(vec_positive_z)<0
+        && (vec_cor3-vec_cor2).cross(vec_pt-vec_cor2).dot(vec_positive_z)<0
+        && (vec_cor0-vec_cor3).cross(vec_pt-vec_cor3).dot(vec_positive_z)<0)
+        return true;
+    
+    return false;   
+}
+
 void ObjectSimulator::GenerateLidarPts(std::vector<BoxObject> &gt, std::vector<LidarPoint> &lidarpts)
 {
     lidarpts.clear();
@@ -257,6 +283,8 @@ void ObjectSimulator::GenerateLidarPts(std::vector<BoxObject> &gt, std::vector<L
             rotated_corner.push_back(newpt);
         }
 
+        if (is_inside_box(cv::Point2f(0,0), rotated_corner))  continue;
+
         cv::line(lidarmap, lidarmap2pixel(rotated_corner[0]), lidarmap2pixel(rotated_corner[1]), 100, 2);
         cv::line(lidarmap, lidarmap2pixel(rotated_corner[0]), lidarmap2pixel(rotated_corner[3]), 100, 2);
         cv::line(lidarmap, lidarmap2pixel(rotated_corner[2]), lidarmap2pixel(rotated_corner[1]), 100, 2);
@@ -269,9 +297,14 @@ void ObjectSimulator::GenerateLidarPts(std::vector<BoxObject> &gt, std::vector<L
         {
             float rx = range * sin(theta * pi / 180.0);
             float ry = range * cos(theta * pi / 180.0);
-            if (lidarmap.at<uchar>(lidarmap2pixel(cv::Point2f(rx, ry))))
+            cv::Point map_pt = lidarmap2pixel(cv::Point2f(rx, ry));
+            map_pt.x = std::max(map_pt.x, 0);
+            map_pt.x = std::min(map_pt.x, lidarmap.cols-1);
+            map_pt.y = std::max(map_pt.y, 0);
+            map_pt.y = std::min(map_pt.y, lidarmap.rows-1);
+            if (lidarmap.at<uchar>(map_pt))
             {
-                lidarmap.at<uchar>(lidarmap2pixel(cv::Point2f(rx, ry))) = 255;
+                lidarmap.at<uchar>(map_pt) = 255;
 
                 // add noise
                 std::random_device e;

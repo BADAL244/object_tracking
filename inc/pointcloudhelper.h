@@ -277,9 +277,9 @@ static void detection_core(std::vector<LidarPoint> &roi,
 
 				final_yaw = 180 - yaw;
 				final_size_l = fabs(max_x - min_x);
-				final_size_l = std::max(box_object_len, final_size_l);
+				// final_size_l = std::max(box_object_len, final_size_l);
 				final_size_w = fabs(max_y - min_y);
-				final_size_w = std::max(box_object_wid, final_size_w);
+				// final_size_w = std::max(box_object_wid, final_size_w);
 			}
 		}
 		else
