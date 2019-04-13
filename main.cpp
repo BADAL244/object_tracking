@@ -17,11 +17,17 @@ int main()
     std::vector<LidarPoint> lidarpts;
     std::vector<BoxObject> filtered_radarobjs;
     std::vector<BoxObject> lidarobjs;
-    while (frame_cnt++ < 60 / update_period)
+    // while (frame_cnt++ < 60 / update_period)
+    while (true)
     {
         sim.GenerateGT(gt);
         sim.GenerateRadarObsv(gt, radarobjs);
         sim.GenerateLidarPts(gt, lidarpts);
+
+        // test pointcloud cluster
+        // pointcloud_labelling(lidarpts);
+        // pointcloud_labelling_try_dbscan(lidarpts);
+        // pointcloud_labelling_try_meanshift(lidarpts);
 
         radar_tracker.EKF(radarobjs, filtered_radarobjs);
         anchor2center(filtered_radarobjs);

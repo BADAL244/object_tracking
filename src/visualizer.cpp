@@ -76,7 +76,10 @@ void Visualizer::DrawLidarPts(const std::vector<LidarPoint> &v, cv::Scalar color
     {
         float rx = obj.rx;
         float ry = obj.ry;
-        cv::circle(local_map, map2pixel(rx, ry), 1, color, 1);
+        cv::Point map_pt = map2pixel(rx, ry);
+        local_map.at<cv::Vec3b>(map_pt.y, map_pt.x)[0] = color[0];
+        local_map.at<cv::Vec3b>(map_pt.y, map_pt.x)[1] = color[1];
+        local_map.at<cv::Vec3b>(map_pt.y, map_pt.x)[2] = color[2];
     }
 }
 

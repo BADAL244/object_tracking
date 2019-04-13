@@ -5,6 +5,9 @@
 #include "object.h"
 #include "visualizer.h"
 
+#include "dbscan.h"
+#include "meanshift.h"
+
 const float ccl_win_w = 2 / map_scale;
 const float ccl_win_h = 2 / map_scale;
 
@@ -155,6 +158,93 @@ void pointcloud_labelling(std::vector<LidarPoint> &lidarpts)
 	// ccl(lidarmap);
 	// printf("ccl end\n");
 
+    cv::namedWindow("pointcloud_label");
+	cv::imshow("pointcloud_label", lidarmap);
+    cv::waitKey(5);
+}
+
+void pointcloud_labelling_try_dbscan(std::vector<LidarPoint> &lidarpts)
+{
+    Visualizer pcviser;
+    pcviser.Init();
+    pcviser.DrawLidarPts(lidarpts, cv::Scalar(0,255,255));
+    cv::Mat lidarmap = pcviser.GetMap();
+
+	printf("[pointcloud_labelling_try_dbscan] %zu pointclouds received\n", lidarpts.size());
+	if (lidarpts.size())
+	{
+		std::vector<std::vector<int> > dbscan_res = dbscan_entry(lidarpts.size(), 1.0, 1, lidarpts);
+		
+		printf("[pointcloud_labelling_try_dbscan] there is %zu cluster at all\n", dbscan_res.size());
+
+		lidarmap = cv::Mat::zeros(lidarmap.rows, lidarmap.cols, CV_8UC3);
+		for (int i=0; i<dbscan_res.size(); ++i)
+		{
+			for (int j=0; j<dbscan_res[i].size(); ++j)
+			{
+				LidarPoint lpt = lidarpts[dbscan_res[i][j]];
+				cv::Point map_pt;
+				map_pt.x = lpt.ry / map_scale + map_range_width / map_scale,
+            	map_pt.y = map_range_length / map_scale - lpt.rx / map_scale;
+				
+				map_pt.x = std::max(map_pt.x, 0);
+            	map_pt.x = std::min(map_pt.x, lidarmap.cols-1);
+            	map_pt.y = std::max(map_pt.y, 0);
+            	map_pt.y = std::min(map_pt.y, lidarmap.rows-1);
+
+				cv::Scalar color = label2color(i+1, dbscan_res.size());
+				lidarmap.at<cv::Vec3b>(map_pt.y, map_pt.x)[0] = color[0];
+				lidarmap.at<cv::Vec3b>(map_pt.y, map_pt.x)[1] = color[1];
+				lidarmap.at<cv::Vec3b>(map_pt.y, map_pt.x)[2] = color[2];
+			}
+		}
+		printf("[pointcloud_labelling_try_dbscan] cluster display ok\n");
+	}
+	
+    cv::namedWindow("pointcloud_label");
+	cv::imshow("pointcloud_label", lidarmap);
+    cv::waitKey(5);
+}
+
+void pointcloud_labelling_try_meanshift(std::vector<LidarPoint> &lidarpts)
+{
+    Visualizer pcviser;
+    pcviser.Init();
+    pcviser.DrawLidarPts(lidarpts, cv::Scalar(0,255,255));
+    cv::Mat lidarmap = pcviser.GetMap();
+
+	printf("[pointcloud_labelling_try_meanshift] %zu pointclouds received\n", lidarpts.size());
+	if (lidarpts.size())
+	{
+		std::vector<Cluster> meanshift_res = meanshift_entry(lidarpts, 1);
+		
+		printf("[pointcloud_labelling_try_meanshift] there is %zu cluster at all\n", meanshift_res.size());
+
+		lidarmap = cv::Mat::zeros(lidarmap.rows, lidarmap.cols, CV_8UC3);
+		for (int i=0; i<meanshift_res.size(); ++i)
+		{
+			for (int j=0; j<meanshift_res[i].original_points.size(); ++j)
+			{
+				std::vector<double> lpt = meanshift_res[i].original_points[j];
+
+				cv::Point map_pt;
+				map_pt.x = lpt[1] / map_scale + map_range_width / map_scale,
+            	map_pt.y = map_range_length / map_scale - lpt[0] / map_scale;
+				
+				map_pt.x = std::max(map_pt.x, 0);
+            	map_pt.x = std::min(map_pt.x, lidarmap.cols-1);
+            	map_pt.y = std::max(map_pt.y, 0);
+            	map_pt.y = std::min(map_pt.y, lidarmap.rows-1);
+
+				cv::Scalar color = label2color(i+1, meanshift_res.size());
+				lidarmap.at<cv::Vec3b>(map_pt.y, map_pt.x)[0] = color[0];
+				lidarmap.at<cv::Vec3b>(map_pt.y, map_pt.x)[1] = color[1];
+				lidarmap.at<cv::Vec3b>(map_pt.y, map_pt.x)[2] = color[2];
+			}
+		}
+		printf("[pointcloud_labelling_try_meanshift] cluster display ok\n");
+	}
+	
     cv::namedWindow("pointcloud_label");
 	cv::imshow("pointcloud_label", lidarmap);
     cv::waitKey(5);
