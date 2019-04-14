@@ -88,7 +88,7 @@ static void ccl_dfs(int row, int col, cv::Mat &m,
     }
 }
 
-static void ccl(cv::Mat &map, std::vector<int> &label)
+static void ccl(cv::Mat &map, std::vector<int> &label, int &label_cnt)
 {
     cv::Mat m;
     cv::cvtColor(map, m, CV_BGR2GRAY);
@@ -97,7 +97,8 @@ static void ccl(cv::Mat &map, std::vector<int> &label)
     std::vector<bool> visited(m.rows * m.cols, 0);
     std::vector<int> area(m.rows * m.cols, 0);
 
-	int label_cnt = 0;
+	// int label_cnt = 0;
+	label_cnt = 0;
 
 	for (int i = 0; i < m.rows; i++)
 	{
@@ -148,8 +149,49 @@ void pointcloud_labelling(std::vector<LidarPoint> &lidarpts)
 	printf("[pointcloud_labelling] %zu pointclouds received\n", lidarpts.size());
 	if (lidarpts.size())
 	{
+		int label_cnt = 0;
 		std::vector<int> label(lidarmap.rows * lidarmap.cols, 0);
-		ccl(lidarmap, label);
+		ccl(lidarmap, label, label_cnt);
+
+		// draw cluster center in white
+		if (label_cnt)
+		{
+			std::vector<LidarPoint> cluster_center(label_cnt+1, {FLT_MAX, FLT_MAX});
+			for (auto lpt : lidarpts)
+			{
+				cv::Point map_pt;
+				map_pt.x = lpt.ry / map_scale + map_range_width / map_scale,
+				map_pt.y = map_range_length / map_scale - lpt.rx / map_scale;
+
+				map_pt.x = std::max(map_pt.x, 0);
+				map_pt.x = std::min(map_pt.x, lidarmap.cols-1);
+				map_pt.y = std::max(map_pt.y, 0);
+				map_pt.y = std::min(map_pt.y, lidarmap.rows-1);
+
+				assert(label[map_pt.y*lidarmap.cols+map_pt.x]);  // need carefully check
+
+				LidarPoint nearest_lpt = cluster_center[label[map_pt.y*lidarmap.cols+map_pt.x]];
+				float nearest_dist = sqrt(pow(nearest_lpt.rx, 2)+pow(nearest_lpt.ry, 2));
+				float tmp_dist = sqrt(pow(lpt.rx, 2)+pow(lpt.ry, 2));
+				if (tmp_dist < nearest_dist)
+					cluster_center[label[map_pt.y*lidarmap.cols+map_pt.x]] = lpt;
+			}
+
+			for (auto lpt : cluster_center)
+			{
+				cv::Point map_pt;
+				map_pt.x = lpt.ry / map_scale + map_range_width / map_scale,
+				map_pt.y = map_range_length / map_scale - lpt.rx / map_scale;
+
+				map_pt.x = std::max(map_pt.x, 0);
+				map_pt.x = std::min(map_pt.x, lidarmap.cols-1);
+				map_pt.y = std::max(map_pt.y, 0);
+				map_pt.y = std::min(map_pt.y, lidarmap.rows-1);
+
+				cv::Scalar color(255,255,255);
+				cv::circle(lidarmap, map_pt, 2, color, 2);
+			}
+		}
 	}
 	
 	// // test ccl
@@ -421,8 +463,9 @@ void lidar_object_detection(std::vector<LidarPoint> &lidarpts,
     	pcviser.DrawLidarPts(lidarpts, cv::Scalar(0,255,255));
 		
     	cv::Mat lidarmap = pcviser.GetMap();
+		int label_cnt = 0;
 		std::vector<int> label(lidarmap.rows * lidarmap.cols, 0);
-		ccl(lidarmap, label);
+		ccl(lidarmap, label, label_cnt);
 
 		for (auto radarobj : filtered_radarobjs)
 		{

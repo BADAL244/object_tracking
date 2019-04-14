@@ -65,7 +65,14 @@ void Visualizer::DrawRadarObjs(const std::vector<RadarObject> &v, cv::Scalar col
     {
         float rx = obj.r * cos(obj.theta);
         float ry = obj.r * sin(obj.theta);
-        cv::circle(local_map, map2pixel(rx, ry), 2, color, 2);
+        cv::Point map_pt = map2pixel(rx, ry);
+
+        map_pt.x = std::max(map_pt.x, 0);
+        map_pt.x = std::min(map_pt.x, local_map.cols-1);
+        map_pt.y = std::max(map_pt.y, 0);
+        map_pt.y = std::min(map_pt.y, local_map.rows-1);
+
+        cv::circle(local_map, map_pt, 2, color, 2);
 //        ShowId(obj);
     }
 }
@@ -77,6 +84,12 @@ void Visualizer::DrawLidarPts(const std::vector<LidarPoint> &v, cv::Scalar color
         float rx = obj.rx;
         float ry = obj.ry;
         cv::Point map_pt = map2pixel(rx, ry);
+
+        map_pt.x = std::max(map_pt.x, 0);
+        map_pt.x = std::min(map_pt.x, local_map.cols-1);
+        map_pt.y = std::max(map_pt.y, 0);
+        map_pt.y = std::min(map_pt.y, local_map.rows-1);
+
         local_map.at<cv::Vec3b>(map_pt.y, map_pt.x)[0] = color[0];
         local_map.at<cv::Vec3b>(map_pt.y, map_pt.x)[1] = color[1];
         local_map.at<cv::Vec3b>(map_pt.y, map_pt.x)[2] = color[2];
